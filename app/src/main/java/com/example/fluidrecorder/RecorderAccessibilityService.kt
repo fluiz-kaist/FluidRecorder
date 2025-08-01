@@ -22,6 +22,9 @@ class RecorderAccessibilityService : AccessibilityService() {
     private var pendingClickNode: AccessibilityNodeInfo? = null
     private var overlayManager: OverlayManager? = null
     private val mainHandler = android.os.Handler(android.os.Looper.getMainLooper())
+    private val nodeMap = HashMap<Int, AccessibilityNodeInfo>()
+    private var currentScreenDump: String? = null
+    private var rootNode: AccessibilityNodeInfo? = null
 
     override fun onServiceConnected() {
         super.onServiceConnected()
@@ -60,6 +63,8 @@ class RecorderAccessibilityService : AccessibilityService() {
         when (event.eventType) {
             AccessibilityEvent.TYPE_VIEW_HOVER_ENTER -> {
                 Log.d(TAG, "onAccessibilityEvent: start${event.source}")
+                // 현재 화면 Dump
+                dumpCurrentScreen()
                 handleHoverEnter(event)
                 handleHoverExit(event)
             }
@@ -84,6 +89,12 @@ class RecorderAccessibilityService : AccessibilityService() {
         // 노드 정보 수집
         val nodeInfo = extractNodeInfo(source)
         Log.d(TAG, "Hover Enter - Node Info: $nodeInfo")
+
+        // XPath 계산
+        if (rootNode != null) {
+            val xpath = AccessibilityNodeInfoDumper.getXPath(source, rootNode)
+            Log.d(TAG, "Node XPath: $xpath")
+        }
 
         // 녹화 중이면 정보 표시
         if (isRecording) {
@@ -191,6 +202,33 @@ class RecorderAccessibilityService : AccessibilityService() {
 
     override fun onInterrupt() {
         Log.d(TAG, "Accessibility Service Interrupted")
+    }
+
+    private fun dumpCurrentScreen() {
+        try {
+            // 현재 활성화된 윈도우의 루트 노드 가져오기
+            rootNode = rootInActiveWindow
+            if (rootNode == null) {
+                Log.w(TAG, "Root node is null, cannot dump screen")
+                return
+            }
+
+            // 노드맵 초기화
+            nodeMap.clear()
+
+            // 화면 Dump
+            currentScreenDump = AccessibilityNodeInfoDumper.dumpWindow(rootNode, nodeMap)
+
+            if (currentScreenDump != null) {
+                Log.d(TAG, "Screen dumped successfully")
+                // XML 내용의 일부만 로그에 출력 (너무 길 수 있으므로)
+                Log.d(TAG, "Screen dump preview: ${currentScreenDump!!.take(500)}...")
+            } else {
+                Log.w(TAG, "Failed to dump screen")
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error dumping screen", e)
+        }
     }
 
     override fun onDestroy() {
