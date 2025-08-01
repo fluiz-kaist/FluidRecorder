@@ -1,3 +1,4 @@
 <resources>
     <string name="app_name">FluidRecorder</string>
+    <string name="accessibility_service_description">이 서비스는 다른 앱의 터치 이벤트를 녹화하여 노드 정보를 표시합니다.</string>
 </resources>
