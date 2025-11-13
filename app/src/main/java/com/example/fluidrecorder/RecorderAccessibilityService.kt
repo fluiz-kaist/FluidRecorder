@@ -9,6 +9,9 @@ import android.util.Log
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import android.widget.Toast
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 class RecorderAccessibilityService : AccessibilityService() {
 
@@ -228,6 +231,57 @@ class RecorderAccessibilityService : AccessibilityService() {
             }
         } catch (e: Exception) {
             Log.e(TAG, "Error dumping screen", e)
+        }
+    }
+
+    fun dumpCurrentScreenToServer() {
+        try {
+            // 현재 활성화된 윈도우의 루트 노드 가져오기
+            val rootNode = rootInActiveWindow
+            if (rootNode == null) {
+                Log.w(TAG, "Root node is null, cannot dump screen")
+                showToast("화면을 가져올 수 없습니다")
+                return
+            }
+
+            // 노드맵 초기화
+            val tempNodeMap = HashMap<Int, AccessibilityNodeInfo>()
+
+            // 화면 Dump
+            val xmlDump = AccessibilityNodeInfoDumper.dumpWindow(rootNode, tempNodeMap)
+
+            if (xmlDump != null) {
+                Log.d(TAG, "Screen dumped successfully for server upload")
+                
+                // 현재 타임스탬프로 파일명 생성
+                val dateFormat = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault())
+                val timestamp = dateFormat.format(Date())
+                val filename = "screen_dump_$timestamp.xml"
+                
+                // 서버로 전송
+                NetworkManager.sendScreenDump(
+                    xml = xmlDump,
+                    filename = filename,
+                    onSuccess = {
+                        Log.d(TAG, "Screen dump sent to server successfully")
+                        mainHandler.post {
+                            showToast("화면 덤프가 서버로 전송되었습니다")
+                        }
+                    },
+                    onError = { error ->
+                        Log.e(TAG, "Failed to send screen dump: $error")
+                        mainHandler.post {
+                            showToast("서버 전송 실패: $error")
+                        }
+                    }
+                )
+            } else {
+                Log.w(TAG, "Failed to dump screen")
+                showToast("화면 덤프에 실패했습니다")
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error dumping screen for server", e)
+            showToast("오류 발생: ${e.message}")
         }
     }
 

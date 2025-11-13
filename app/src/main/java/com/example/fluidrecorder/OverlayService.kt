@@ -1,11 +1,14 @@
 package com.example.fluidrecorder
 
+import android.animation.ObjectAnimator
 import android.annotation.SuppressLint
 import android.app.Service
 import android.content.Intent
 import android.graphics.PixelFormat
 import android.os.Build
 import android.os.IBinder
+import android.provider.Settings
+import android.util.Log
 import android.view.Gravity
 import android.view.LayoutInflater
 import android.view.View
@@ -15,16 +18,30 @@ import android.widget.TextView
 
 class OverlayService : Service() {
 
+    companion object {
+        private const val TAG = "OverlayService"
+    }
+
     private lateinit var windowManager: WindowManager
     private var floatingView: View? = null
     private var infoView: View? = null
     private var isRecording = false
+    private var isExpanded = false
 
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onCreate() {
         super.onCreate()
         windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
+        
+        // 오버레이 권한 확인
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            if (!Settings.canDrawOverlays(this)) {
+                Log.w(TAG, "오버레이 권한이 없습니다. 플로팅 버튼을 생성할 수 없습니다.")
+                return
+            }
+        }
+        
         createFloatingView()
     }
 
@@ -65,29 +82,57 @@ class OverlayService : Service() {
                         }
 
         floatingView?.let { view ->
+            val mainButton = view.findViewById<Button>(R.id.mainButton)
             val recordButton = view.findViewById<Button>(R.id.recordButton)
+            val dumpButton = view.findViewById<Button>(R.id.dumpButton)
+
+            // 녹화 버튼 클릭
             recordButton.setOnClickListener { toggleRecording() }
 
-            // 드래그 기능 추가
+            // 화면 덤프 버튼 클릭
+            dumpButton.setOnClickListener { 
+                RecorderAccessibilityService.instance?.dumpCurrentScreenToServer()
+            }
+
+            // 드래그 기능 추가 (메인 버튼에만 적용)
             var initialX = 0
             var initialY = 0
             var initialTouchX = 0f
             var initialTouchY = 0f
+            var isDragging = false
 
-            recordButton.setOnTouchListener { v, event ->
+            mainButton.setOnTouchListener { v, event ->
                 when (event.action) {
                     android.view.MotionEvent.ACTION_DOWN -> {
                         initialX = params.x
                         initialY = params.y
                         initialTouchX = event.rawX
                         initialTouchY = event.rawY
+                        isDragging = false
                         false
                     }
                     android.view.MotionEvent.ACTION_MOVE -> {
-                        params.x = initialX - (event.rawX - initialTouchX).toInt()
-                        params.y = initialY + (event.rawY - initialTouchY).toInt()
-                        windowManager.updateViewLayout(view, params)
-                        true
+                        val deltaX = Math.abs(event.rawX - initialTouchX)
+                        val deltaY = Math.abs(event.rawY - initialTouchY)
+                        if (deltaX > 10 || deltaY > 10) {
+                            isDragging = true
+                            params.x = initialX - (event.rawX - initialTouchX).toInt()
+                            params.y = initialY + (event.rawY - initialTouchY).toInt()
+                            windowManager.updateViewLayout(view, params)
+                            true
+                        } else {
+                            false
+                        }
+                    }
+                    android.view.MotionEvent.ACTION_UP -> {
+                        if (isDragging) {
+                            isDragging = false
+                            true
+                        } else {
+                            // 클릭으로 인식 - 펼치기/접기 토글
+                            toggleExpand()
+                            true
+                        }
                     }
                     else -> false
                 }
@@ -95,6 +140,101 @@ class OverlayService : Service() {
 
             windowManager.addView(view, params)
         }
+    }
+
+    private fun toggleExpand() {
+        floatingView?.let { view ->
+            val recordButton = view.findViewById<Button>(R.id.recordButton)
+            val dumpButton = view.findViewById<Button>(R.id.dumpButton)
+            val mainButton = view.findViewById<Button>(R.id.mainButton)
+
+            isExpanded = !isExpanded
+
+            if (isExpanded) {
+                // 펼치기
+                mainButton.text = "×"
+                
+                // 녹화 버튼 보이기
+                recordButton.visibility = View.VISIBLE
+                recordButton.alpha = 0f
+                recordButton.translationY = 0f
+                recordButton.isClickable = true
+                
+                ObjectAnimator.ofFloat(recordButton, "translationY", 0f, 80f).apply {
+                    duration = 300
+                    start()
+                }
+                ObjectAnimator.ofFloat(recordButton, "alpha", 0f, 1f).apply {
+                    duration = 300
+                    start()
+                }
+
+                // 덤프 버튼 보이기
+                dumpButton.visibility = View.VISIBLE
+                dumpButton.alpha = 0f
+                dumpButton.translationY = 0f
+                dumpButton.isClickable = true
+                
+                ObjectAnimator.ofFloat(dumpButton, "translationY", 0f, 160f).apply {
+                    duration = 300
+                    start()
+                }
+                ObjectAnimator.ofFloat(dumpButton, "alpha", 0f, 1f).apply {
+                    duration = 300
+                    start()
+                }
+                
+                Log.d(TAG, "버튼 펼침")
+            } else {
+                // 접기
+                mainButton.text = "☰"
+                
+                // 버튼 클릭 비활성화
+                recordButton.isClickable = false
+                dumpButton.isClickable = false
+
+                // 녹화 버튼 숨기기
+                ObjectAnimator.ofFloat(recordButton, "translationY", 80f, 0f).apply {
+                    duration = 300
+                    start()
+                }
+                ObjectAnimator.ofFloat(recordButton, "alpha", 1f, 0f).apply {
+                    duration = 300
+                    start()
+                }.also {
+                    it.doOnEnd { 
+                        recordButton.visibility = View.GONE
+                    }
+                }
+
+                // 덤프 버튼 숨기기
+                ObjectAnimator.ofFloat(dumpButton, "translationY", 160f, 0f).apply {
+                    duration = 300
+                    start()
+                }
+                ObjectAnimator.ofFloat(dumpButton, "alpha", 1f, 0f).apply {
+                    duration = 300
+                    start()
+                }.also {
+                    it.doOnEnd { 
+                        dumpButton.visibility = View.GONE
+                    }
+                }
+                
+                Log.d(TAG, "버튼 접음")
+            }
+        }
+    }
+
+    private fun ObjectAnimator.doOnEnd(action: () -> Unit) {
+        addListener(object : android.animation.Animator.AnimatorListener {
+            override fun onAnimationStart(animation: android.animation.Animator) {}
+            override fun onAnimationEnd(animation: android.animation.Animator) {
+                action()
+            }
+            override fun onAnimationCancel(animation: android.animation.Animator) {}
+            override fun onAnimationRepeat(animation: android.animation.Animator) {}
+        })
     }
 
     private fun toggleRecording() {
@@ -113,6 +253,14 @@ class OverlayService : Service() {
     }
 
     private fun createInfoView() {
+        // 오버레이 권한 확인
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            if (!Settings.canDrawOverlays(this)) {
+                Log.w(TAG, "오버레이 권한이 없어서 info view를 생성할 수 없습니다.")
+                return
+            }
+        }
+        
         val inflater = LayoutInflater.from(this)
         infoView = inflater.inflate(R.layout.node_info_view, null)
 
@@ -137,7 +285,13 @@ class OverlayService : Service() {
                             y = 100
                         }
 
-        infoView?.let { windowManager.addView(it, params) }
+        infoView?.let { 
+            try {
+                windowManager.addView(it, params)
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to add info view", e)
+            }
+        }
     }
 
     private fun showNodeInfo(info: String) {
@@ -149,14 +303,25 @@ class OverlayService : Service() {
 
     private fun removeInfoView() {
         infoView?.let {
-            windowManager.removeView(it)
-            infoView = null
+            try {
+                windowManager.removeView(it)
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to remove info view", e)
+            } finally {
+                infoView = null
+            }
         }
     }
 
     override fun onDestroy() {
         super.onDestroy()
-        floatingView?.let { windowManager.removeView(it) }
+        floatingView?.let { 
+            try {
+                windowManager.removeView(it)
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to remove floating view", e)
+            }
+        }
         removeInfoView()
     }
 }
