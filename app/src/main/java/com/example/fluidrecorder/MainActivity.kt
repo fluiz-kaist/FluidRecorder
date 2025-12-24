@@ -9,11 +9,13 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.example.fluidrecorder.ui.theme.FluidRecorderTheme
@@ -47,6 +49,7 @@ class MainActivity : ComponentActivity() {
     @Composable
     fun MainScreen() {
         val context = LocalContext.current
+        var sessionId by remember { mutableStateOf(AppGlobals.sessionId) }
         
         Column(
             modifier = Modifier
@@ -65,8 +68,26 @@ class MainActivity : ComponentActivity() {
                 text = "이 앱은 AccessibilityService를 사용하여\n다른 앱의 터치 이벤트를 녹화합니다.",
                 style = MaterialTheme.typography.bodyLarge,
                 textAlign = TextAlign.Center,
-                modifier = Modifier.padding(bottom = 48.dp)
+                modifier = Modifier.padding(bottom = 24.dp)
             )
+            
+            // Session ID 입력 필드
+            OutlinedTextField(
+                value = sessionId,
+                onValueChange = { newValue ->
+                    sessionId = newValue
+                    AppGlobals.sessionId = newValue
+                },
+                label = { Text("Session ID") },
+                placeholder = { Text("세션 ID를 입력하세요") },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                singleLine = true,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 32.dp, vertical = 16.dp)
+            )
+            
+            Spacer(modifier = Modifier.height(24.dp))
             
             Button(
                 onClick = {

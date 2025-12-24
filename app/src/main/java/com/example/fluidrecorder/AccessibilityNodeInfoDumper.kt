@@ -173,5 +173,41 @@ class AccessibilityNodeInfoDumper {
             }
             return 1
         }
+
+        /**
+         * nodeMap에서 특정 노드의 인덱스를 찾습니다.
+         * 노드의 bounds와 className을 비교하여 동일한 노드를 찾습니다.
+         */
+        fun findNodeIndex(
+                targetNode: AccessibilityNodeInfo,
+                nodeMap: HashMap<Int, AccessibilityNodeInfo>
+        ): Int {
+            val targetBounds = Rect()
+            targetNode.getBoundsInScreen(targetBounds)
+            val targetClassName = targetNode.className?.toString()
+
+            for ((index, node) in nodeMap) {
+                val nodeBounds = Rect()
+                node.getBoundsInScreen(nodeBounds)
+                
+                // bounds와 className이 동일하면 같은 노드로 판단
+                if (nodeBounds == targetBounds && 
+                    node.className?.toString() == targetClassName) {
+                    return index
+                }
+            }
+            return -1 // 찾지 못한 경우
+        }
+
+        /**
+         * 노드가 입력 필드인지 확인합니다.
+         */
+        fun isInputField(node: AccessibilityNodeInfo): Boolean {
+            val className = node.className?.toString() ?: return false
+            return className.contains("EditText") || 
+                   className.contains("AutoCompleteTextView") ||
+                   className.contains("SearchView") ||
+                   node.isEditable
+        }
     }
 }

@@ -222,9 +222,56 @@ class RecorderAccessibilityService : AccessibilityService() {
             
             // 1초 후 테두리 제거
             mainHandler.postDelayed({ overlayManager?.hideRedBorder() }, 1000)
+            
+            // 서버로 액션 전송
+            sendActionToServer(foundNode, xpath)
         } else {
             Log.w(TAG, "No node found at position ($x, $y)")
         }
+    }
+    
+    /**
+     * 클릭한 노드 정보를 서버로 전송합니다.
+     */
+    private fun sendActionToServer(node: AccessibilityNodeInfo, xpath: String?) {
+        if (currentScreenDump == null) {
+            Log.w(TAG, "Screen dump is null, cannot send action")
+            return
+        }
+        
+        val sessionId = AppGlobals.sessionId
+        if (sessionId.isEmpty()) {
+            Log.w(TAG, "Session ID is not set, cannot send action")
+            return
+        }
+        
+        // 노드 인덱스 찾기
+        val nodeIndex = AccessibilityNodeInfoDumper.findNodeIndex(node, nodeMap)
+        
+        // 입력 필드인지 확인하여 name 결정
+        val actionName = if (AccessibilityNodeInfoDumper.isInputField(node)) "input" else "click"
+        
+        Log.d(TAG, "Sending action to server - xpath: $xpath, name: $actionName, index: $nodeIndex, sessionId: $sessionId")
+        
+        NetworkManager.sendAction(
+            xpath = xpath ?: "",
+            name = actionName,
+            index = nodeIndex,
+            screen = currentScreenDump!!,
+            sessionId = sessionId,
+            onSuccess = {
+                Log.d(TAG, "Action sent to server successfully")
+                mainHandler.post {
+                    showToast("액션 전송 완료")
+                }
+            },
+            onError = { error ->
+                Log.e(TAG, "Failed to send action: $error")
+                mainHandler.post {
+                    showToast("액션 전송 실패: $error")
+                }
+            }
+        )
     }
     
     /**
