@@ -74,14 +74,49 @@ class RecorderAccessibilityService : AccessibilityService() {
             AccessibilityEvent.TYPE_VIEW_HOVER_EXIT -> {
                 Log.d(TAG, "onAccessibilityEvent: end")
             }
-            AccessibilityEvent.TYPE_VIEW_CLICKED -> {
-                Log.d(TAG, "View clicked event received")
+            AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED -> {
+                // 화면이 변경되면 테두리 제거
+                overlayManager?.hideRedBorder()
+                // 윈도우 변경 시 약간의 딜레이 후 포커스 리프레시
+                mainHandler.postDelayed({
+                    refreshAccessibilityFocus()
+                }, 300)
             }
-            AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED,
             AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED -> {
                 // 화면이 변경되면 테두리 제거
                 overlayManager?.hideRedBorder()
             }
+        }
+    }
+
+    /**
+     * 접근성 포커스를 강제로 리프레시하여 HOVER 이벤트가 정상 작동하도록 함
+     */
+    private fun refreshAccessibilityFocus() {
+        try {
+            val root = ensureFreshRootNode() ?: return
+            Log.d(TAG, "Refreshing accessibility focus for window: ${root.packageName}")
+            
+            // 루트 노드에 접근성 포커스 설정 후 해제하여 강제 리프레시
+            root.performAction(AccessibilityNodeInfo.ACTION_ACCESSIBILITY_FOCUS)
+            mainHandler.postDelayed({
+                try {
+                    root.performAction(AccessibilityNodeInfo.ACTION_CLEAR_ACCESSIBILITY_FOCUS)
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error clearing accessibility focus", e)
+                }
+            }, 50)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error refreshing accessibility focus", e)
+        }
+    }
+
+    /**
+     * 캐시된 rootNode 대신 항상 새로운 rootInActiveWindow를 가져옴
+     */
+    private fun ensureFreshRootNode(): AccessibilityNodeInfo? {
+        return rootInActiveWindow?.also {
+            rootNode = it
         }
     }
 
