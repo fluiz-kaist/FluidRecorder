@@ -24,10 +24,15 @@ class RecorderAccessibilityService : AccessibilityService() {
     private var lastHoveredNode: AccessibilityNodeInfo? = null
     private var pendingClickNode: AccessibilityNodeInfo? = null
     private var overlayManager: OverlayManager? = null
+    private var touchDetectorOverlay: TouchDetectorOverlay? = null
     private val mainHandler = android.os.Handler(android.os.Looper.getMainLooper())
     private val nodeMap = HashMap<Int, AccessibilityNodeInfo>()
     private var currentScreenDump: String? = null
     private var rootNode: AccessibilityNodeInfo? = null
+    
+    // 마지막 터치 좌표
+    private var lastTouchX: Int = 0
+    private var lastTouchY: Int = 0
 
     override fun onServiceConnected() {
         super.onServiceConnected()
@@ -52,6 +57,13 @@ class RecorderAccessibilityService : AccessibilityService() {
 
         // 오버레이 매니저 초기화
         overlayManager = OverlayManager(this)
+        
+        // 터치 감지 오버레이 초기화
+        touchDetectorOverlay = TouchDetectorOverlay(this).apply {
+            setOnTouchCallback { x, y ->
+                handleTouchAtPosition(x, y)
+            }
+        }
 
         // 오버레이 서비스 시작
         startService(Intent(this, OverlayService::class.java))
@@ -170,6 +182,150 @@ class RecorderAccessibilityService : AccessibilityService() {
 
         lastHoveredNode = null
     }
+    
+    /**
+     * 터치 좌표를 기반으로 해당 위치의 노드를 찾아 처리합니다.
+     */
+    private fun handleTouchAtPosition(x: Int, y: Int) {
+        if (!isRecording) return
+        
+        lastTouchX = x
+        lastTouchY = y
+        Log.d(TAG, "Processing touch at position: ($x, $y)")
+        
+        // 현재 화면 덤프
+        dumpCurrentScreen()
+        
+        // 해당 좌표에서 노드 찾기
+        val rootNode = rootInActiveWindow
+        if (rootNode == null) {
+            Log.w(TAG, "Root node is null, cannot find node at position")
+            return
+        }
+        
+        val foundNode = findNodeAtPosition(rootNode, x, y)
+        if (foundNode != null) {
+            val nodeInfo = extractNodeInfo(foundNode)
+            Log.d(TAG, "Found node at ($x, $y): $nodeInfo")
+            
+            // XPath 계산
+            val xpath = AccessibilityNodeInfoDumper.getXPath(foundNode, rootNode)
+            Log.d(TAG, "Node XPath: $xpath")
+            
+            // 노드 정보 표시
+            showNodeInfo(nodeInfo)
+            
+            // 빨간 테두리 표시
+            val bounds = Rect()
+            foundNode.getBoundsInScreen(bounds)
+            overlayManager?.showRedBorder(bounds)
+            
+            // 1초 후 테두리 제거
+            mainHandler.postDelayed({ overlayManager?.hideRedBorder() }, 1000)
+        } else {
+            Log.w(TAG, "No node found at position ($x, $y)")
+        }
+    }
+    
+    /**
+     * 주어진 좌표에서 가장 깊은(가장 구체적인) 노드를 찾습니다.
+     */
+    private fun findNodeAtPosition(node: AccessibilityNodeInfo, x: Int, y: Int): AccessibilityNodeInfo? {
+        val bounds = Rect()
+        node.getBoundsInScreen(bounds)
+        
+        // 좌표가 이 노드의 bounds 안에 없으면 null 반환
+        if (!bounds.contains(x, y)) {
+            return null
+        }
+        
+        // 자식 노드들 중에서 더 구체적인 노드 찾기 (역순으로 탐색 - 위에 있는 뷰가 나중에 그려짐)
+        for (i in node.childCount - 1 downTo 0) {
+            val child = node.getChild(i) ?: continue
+            val childBounds = Rect()
+            child.getBoundsInScreen(childBounds)
+            
+            // 자식이 유효한 bounds를 가지고 있고 좌표를 포함하면 재귀 탐색
+            if (childBounds.width() > 0 && childBounds.height() > 0 && childBounds.contains(x, y)) {
+                val result = findNodeAtPosition(child, x, y)
+                if (result != null) {
+                    return result
+                }
+            }
+        }
+        
+        // 자식 중에 없으면 현재 노드 반환
+        return node
+    }
+    
+    /**
+     * 클릭 가능하거나 중요한 노드를 우선적으로 찾습니다.
+     */
+    private fun findBestNodeAtPosition(node: AccessibilityNodeInfo, x: Int, y: Int): AccessibilityNodeInfo? {
+        val bounds = Rect()
+        node.getBoundsInScreen(bounds)
+        
+        if (!bounds.contains(x, y)) {
+            return null
+        }
+        
+        var bestNode: AccessibilityNodeInfo? = null
+        var bestScore = 0
+        
+        // 현재 노드의 점수 계산
+        val currentScore = calculateNodeScore(node)
+        if (currentScore > bestScore) {
+            bestScore = currentScore
+            bestNode = node
+        }
+        
+        // 자식 노드들 탐색
+        for (i in 0 until node.childCount) {
+            val child = node.getChild(i) ?: continue
+            val childResult = findBestNodeAtPosition(child, x, y)
+            if (childResult != null) {
+                val childScore = calculateNodeScore(childResult)
+                if (childScore >= bestScore) {
+                    bestScore = childScore
+                    bestNode = childResult
+                }
+            }
+        }
+        
+        return bestNode
+    }
+    
+    /**
+     * 노드의 중요도 점수 계산
+     */
+    private fun calculateNodeScore(node: AccessibilityNodeInfo): Int {
+        var score = 0
+        
+        // 클릭 가능하면 높은 점수
+        if (node.isClickable) score += 100
+        
+        // 텍스트나 설명이 있으면 점수 추가
+        if (!node.text.isNullOrEmpty()) score += 50
+        if (!node.contentDescription.isNullOrEmpty()) score += 40
+        
+        // viewId가 있으면 점수 추가
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN_MR2) {
+            if (!node.viewIdResourceName.isNullOrEmpty()) score += 30
+        }
+        
+        // 포커스 가능하면 점수 추가
+        if (node.isFocusable) score += 20
+        
+        // 작은 bounds일수록 더 구체적이므로 점수 추가
+        val bounds = Rect()
+        node.getBoundsInScreen(bounds)
+        val area = bounds.width() * bounds.height()
+        if (area > 0 && area < 100000) {
+            score += (100000 - area) / 10000
+        }
+        
+        return score
+    }
 
     private fun extractNodeInfo(node: AccessibilityNodeInfo): NodeInfo {
         val bounds = Rect()
@@ -213,6 +369,34 @@ class RecorderAccessibilityService : AccessibilityService() {
 
     fun startRecording() {
         isRecording = true
+        
+        // 터치 감지 오버레이 활성화
+        touchDetectorOverlay?.show()
+        touchDetectorOverlay?.setEnabled(true)
+
+        showToast("녹화를 시작합니다 - 터치 감지 활성화")
+        Log.d(TAG, "Recording started - Touch detection enabled")
+    }
+
+    fun stopRecording() {
+        isRecording = false
+        
+        // 터치 감지 오버레이 비활성화
+        touchDetectorOverlay?.setEnabled(false)
+        touchDetectorOverlay?.hide()
+        
+        // 테두리 제거
+        overlayManager?.hideRedBorder()
+
+        showToast("녹화를 중지합니다 - 터치 감지 비활성화")
+        Log.d(TAG, "Recording stopped - Touch detection disabled")
+    }
+    
+    /**
+     * Touch Exploration 모드로 녹화 시작 (기존 방식)
+     */
+    fun startRecordingWithTouchExploration() {
+        isRecording = true
         // Touch exploration mode 활성화
         val info = serviceInfo
         info.flags = info.flags or AccessibilityServiceInfo.FLAG_REQUEST_TOUCH_EXPLORATION_MODE
@@ -222,13 +406,18 @@ class RecorderAccessibilityService : AccessibilityService() {
         Log.d(TAG, "Recording started - Touch Exploration enabled")
     }
 
-    fun stopRecording() {
+    /**
+     * Touch Exploration 모드로 녹화 중지 (기존 방식)
+     */
+    fun stopRecordingWithTouchExploration() {
         isRecording = false
         // Touch exploration mode 비활성화
         val info = serviceInfo
         info.flags =
                 info.flags and AccessibilityServiceInfo.FLAG_REQUEST_TOUCH_EXPLORATION_MODE.inv()
         serviceInfo = info
+        
+        overlayManager?.hideRedBorder()
 
         showToast("녹화를 중지합니다 - Touch Exploration 비활성화")
         Log.d(TAG, "Recording stopped - Touch Exploration disabled")
@@ -325,6 +514,8 @@ class RecorderAccessibilityService : AccessibilityService() {
         instance = null
         overlayManager?.destroy()
         overlayManager = null
+        touchDetectorOverlay?.destroy()
+        touchDetectorOverlay = null
         stopService(Intent(this, OverlayService::class.java))
     }
 
