@@ -58,8 +58,8 @@ class RecorderAccessibilityService : AccessibilityService() {
         // 오버레이 매니저 초기화
         overlayManager = OverlayManager(this)
         
-        // 터치 감지 오버레이 초기화
-        touchDetectorOverlay = TouchDetectorOverlay(this).apply {
+        // 터치 감지 오버레이 초기화 - AccessibilityService 전달하여 dispatchGesture 사용 가능
+        touchDetectorOverlay = TouchDetectorOverlay(this, this).apply {
             setOnTouchCallback { x, y ->
                 handleTouchAtPosition(x, y)
             }
