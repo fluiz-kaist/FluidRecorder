@@ -203,7 +203,7 @@ class RecorderAccessibilityService : AccessibilityService() {
             return
         }
         
-        val foundNode = findNodeAtPosition(rootNode, x, y)
+        val foundNode = findSmallestNodeAtPosition(rootNode, x, y)
         if (foundNode != null) {
             val nodeInfo = extractNodeInfo(foundNode)
             Log.d(TAG, "Found node at ($x, $y): $nodeInfo")
@@ -228,7 +228,68 @@ class RecorderAccessibilityService : AccessibilityService() {
     }
     
     /**
+     * 주어진 좌표에서 가장 작은 영역을 가진 노드를 찾습니다.
+     * 전체 화면을 덮는 투명한 오버레이 뷰 대신 실제 UI 요소를 정확히 선택합니다.
+     */
+    private fun findSmallestNodeAtPosition(node: AccessibilityNodeInfo, x: Int, y: Int): AccessibilityNodeInfo? {
+        val bounds = Rect()
+        node.getBoundsInScreen(bounds)
+        
+        // 좌표가 이 노드의 bounds 안에 없으면 null 반환
+        if (!bounds.contains(x, y)) {
+            return null
+        }
+        
+        // 좌표를 포함하는 모든 노드 수집
+        val candidates = mutableListOf<AccessibilityNodeInfo>()
+        collectNodesAtPosition(node, x, y, candidates)
+        
+        if (candidates.isEmpty()) {
+            return node
+        }
+        
+        // 가장 작은 영역을 가진 노드 선택 (같은 영역이면 clickable 우선)
+        return candidates.minWithOrNull(compareBy(
+            { nodeBounds -> 
+                val b = Rect()
+                nodeBounds.getBoundsInScreen(b)
+                b.width() * b.height()
+            },
+            { nodeBounds -> if (nodeBounds.isClickable) 0 else 1 }
+        ))
+    }
+    
+    /**
+     * 좌표를 포함하는 모든 노드를 재귀적으로 수집합니다.
+     */
+    private fun collectNodesAtPosition(
+        node: AccessibilityNodeInfo, 
+        x: Int, 
+        y: Int, 
+        candidates: MutableList<AccessibilityNodeInfo>
+    ) {
+        val bounds = Rect()
+        node.getBoundsInScreen(bounds)
+        
+        if (!bounds.contains(x, y)) {
+            return
+        }
+        
+        // 유효한 bounds를 가진 노드만 후보에 추가
+        if (bounds.width() > 0 && bounds.height() > 0) {
+            candidates.add(node)
+        }
+        
+        // 모든 자식 노드도 탐색
+        for (i in 0 until node.childCount) {
+            val child = node.getChild(i) ?: continue
+            collectNodesAtPosition(child, x, y, candidates)
+        }
+    }
+    
+    /**
      * 주어진 좌표에서 가장 깊은(가장 구체적인) 노드를 찾습니다.
+     * (기존 방식 - 백업용)
      */
     private fun findNodeAtPosition(node: AccessibilityNodeInfo, x: Int, y: Int): AccessibilityNodeInfo? {
         val bounds = Rect()
