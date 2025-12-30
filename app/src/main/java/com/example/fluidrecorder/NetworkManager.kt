@@ -15,7 +15,7 @@ import java.util.concurrent.TimeUnit
 class NetworkManager {
     companion object {
         private const val TAG = "NetworkManager"
-        private const val BASE_URL = "http://10.1.2.76:3000"
+        private val BASE_URL = AppGlobals.baseUrl
         
         private val client = OkHttpClient.Builder()
             .connectTimeout(10, TimeUnit.SECONDS)
