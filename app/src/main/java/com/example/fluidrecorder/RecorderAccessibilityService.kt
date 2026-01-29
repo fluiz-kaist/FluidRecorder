@@ -188,7 +188,13 @@ class RecorderAccessibilityService : AccessibilityService() {
      */
     private fun handleTouchAtPosition(x: Int, y: Int) {
         if (!isRecording) return
-        
+
+        // Skip recording if touch is on our own overlay (floating buttons)
+        if (OverlayService.isPointInsideOverlay(x, y)) {
+            Log.d(TAG, "Touch on overlay at ($x, $y) - skipping recording")
+            return
+        }
+
         lastTouchX = x
         lastTouchY = y
         Log.d(TAG, "Processing touch at position: ($x, $y)")
