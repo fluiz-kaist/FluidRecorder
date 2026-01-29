@@ -1,6 +1,19 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.jetbrains.kotlin.android)
+}
+
+val mergedProps = Properties().apply {
+    val gradleProps = rootProject.file("gradle.properties")
+    if (gradleProps.exists()) {
+        gradleProps.inputStream().use { load(it) }
+    }
+    val localProps = rootProject.file("local.properties")
+    if (localProps.exists()) {
+        localProps.inputStream().use { load(it) }
+    }
 }
 
 android {
@@ -18,6 +31,8 @@ android {
         vectorDrawables {
             useSupportLibrary = true
         }
+
+        buildConfigField("String", "BASE_URL", "\"${mergedProps.getProperty("BASE_URL") ?: ""}\"")
     }
 
     buildTypes {
@@ -38,6 +53,7 @@ android {
     }
     buildFeatures {
         compose = true
+        buildConfig = true
     }
     composeOptions {
         kotlinCompilerExtensionVersion = "1.5.1"

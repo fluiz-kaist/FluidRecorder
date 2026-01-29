@@ -5,6 +5,7 @@ import android.annotation.SuppressLint
 import android.app.Service
 import android.content.Intent
 import android.graphics.PixelFormat
+import android.graphics.Rect
 import android.os.Build
 import android.os.IBinder
 import android.provider.Settings
@@ -20,6 +21,14 @@ class OverlayService : Service() {
 
     companion object {
         private const val TAG = "OverlayService"
+        private val floatingViewBounds = Rect()
+
+        /**
+         * Check if a point is inside the floating overlay buttons.
+         */
+        fun isPointInsideOverlay(x: Int, y: Int): Boolean {
+            return floatingViewBounds.contains(x, y)
+        }
     }
 
     private lateinit var windowManager: WindowManager
@@ -27,6 +36,10 @@ class OverlayService : Service() {
     private var infoView: View? = null
     private var isRecording = false
     private var isExpanded = false
+    private var screenWidth = 0
+    private var floatingParams: WindowManager.LayoutParams? = null
+    private var buttonSize = 0
+    private var expandedHeight = 0
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -55,6 +68,25 @@ class OverlayService : Service() {
         return START_STICKY
     }
 
+    /**
+     * Update the floating view bounds for touch detection.
+     * Called when the view is created, dragged, or expanded/collapsed.
+     */
+    private fun updateFloatingViewBounds() {
+        val params = floatingParams ?: return
+        // With Gravity.END, x is offset from right edge
+        // So actual left = screenWidth - x - viewWidth
+        val left = screenWidth - params.x - buttonSize
+        val top = params.y
+        val right = screenWidth - params.x
+        // When collapsed, only main button is visible (60dp height)
+        // When expanded, full height
+        val visibleHeight = if (isExpanded) expandedHeight else buttonSize
+        val bottom = top + visibleHeight
+        floatingViewBounds.set(left, top, right, bottom)
+        Log.d(TAG, "Updated floating view bounds: $floatingViewBounds (expanded: $isExpanded)")
+    }
+
     @SuppressLint("ClickableViewAccessibility")
     private fun createFloatingView() {
         val inflater = LayoutInflater.from(this)
@@ -67,10 +99,20 @@ class OverlayService : Service() {
                     WindowManager.LayoutParams.TYPE_PHONE
                 }
 
+        // Calculate height to fit all buttons when expanded
+        // Main button (60dp) + gap + record button (60dp) + gap + dump button (60dp)
+        val density = resources.displayMetrics.density
+        expandedHeight = ((60 + 80 + 60 + 80 + 60) * density).toInt()  // ~340dp total
+        buttonSize = (60 * density).toInt()
+
+        // Get screen dimensions
+        val displayMetrics = resources.displayMetrics
+        screenWidth = displayMetrics.widthPixels
+
         val params =
                 WindowManager.LayoutParams(
                                 WindowManager.LayoutParams.WRAP_CONTENT,
-                                WindowManager.LayoutParams.WRAP_CONTENT,
+                                expandedHeight,
                                 layoutFlag,
                                 WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
                                 PixelFormat.TRANSLUCENT
@@ -80,6 +122,7 @@ class OverlayService : Service() {
                             x = 0
                             y = 100
                         }
+        floatingParams = params
 
         floatingView?.let { view ->
             val mainButton = view.findViewById<Button>(R.id.mainButton)
@@ -127,6 +170,7 @@ class OverlayService : Service() {
                     android.view.MotionEvent.ACTION_UP -> {
                         if (isDragging) {
                             isDragging = false
+                            updateFloatingViewBounds()
                             true
                         } else {
                             // 클릭으로 인식 - 펼치기/접기 토글
@@ -139,6 +183,7 @@ class OverlayService : Service() {
             }
 
             windowManager.addView(view, params)
+            updateFloatingViewBounds()
         }
     }
 
@@ -149,6 +194,7 @@ class OverlayService : Service() {
             val mainButton = view.findViewById<Button>(R.id.mainButton)
 
             isExpanded = !isExpanded
+            updateFloatingViewBounds()
 
             if (isExpanded) {
                 // 펼치기

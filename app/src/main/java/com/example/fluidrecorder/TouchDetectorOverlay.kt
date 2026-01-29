@@ -23,6 +23,10 @@ class TouchDetectorOverlay(
     
     companion object {
         private const val TAG = "TouchDetectorOverlay"
+        private const val CLICK_DURATION_MS = 100L
+        private const val FLAG_SETTLE_DELAY_MS = 100L  // Time for FLAG_NOT_TOUCHABLE to take effect
+        private const val MAX_RECAPTURE_WINDOW_MS = 2000L  // Max time to check for recapture (generous for slow devices)
+        private const val COORDINATE_TOLERANCE = 10f       // Pixels tolerance for coordinate matching
     }
     
     private var windowManager: WindowManager? = null
@@ -32,6 +36,12 @@ class TouchDetectorOverlay(
     private var layoutParams: WindowManager.LayoutParams? = null
     private var isOverlayVisible = false
     private val mainHandler = android.os.Handler(android.os.Looper.getMainLooper())
+
+    // Track the last dispatched gesture to detect recapture
+    private var lastDispatchedX = -1f
+    private var lastDispatchedY = -1f
+    private var lastDispatchTime = 0L
+    private var isDispatching = false
     
     init {
         windowManager = context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
@@ -53,8 +63,17 @@ class TouchDetectorOverlay(
             private var downTime = 0L
             
             override fun onTouchEvent(event: MotionEvent): Boolean {
-                if (!isEnabled) return false
-                
+                if (!isEnabled) {
+                    Log.d(TAG, "Touch ignored - not enabled")
+                    return false
+                }
+
+                // While dispatching, consume but ignore all touches
+                if (isDispatching) {
+                    Log.d(TAG, "Touch consumed during dispatch at (${event.rawX}, ${event.rawY})")
+                    return true  // Consume to maintain touch sequence
+                }
+
                 when (event.action) {
                     MotionEvent.ACTION_DOWN -> {
                         downX = event.rawX
@@ -73,15 +92,24 @@ class TouchDetectorOverlay(
                         val deltaX = kotlin.math.abs(upX - downX)
                         val deltaY = kotlin.math.abs(upY - downY)
                         
+                        // Set non-touchable and dispatch
+                        isDispatching = true
+                        setTouchPassthrough(true)
+                        Log.d(TAG, "Starting dispatch sequence")
+
                         if (deltaX < 50 && deltaY < 50) {
                             // 콜백으로 노드 정보 캡처
                             onTouchCallback?.invoke(upX.toInt(), upY.toInt())
-                            
+
                             // dispatchGesture로 실제 클릭 재현
-                            dispatchClick(upX, upY)
+                            mainHandler.postDelayed({
+                                dispatchClick(upX, upY)
+                            }, FLAG_SETTLE_DELAY_MS)
                         } else {
                             // 스와이프 재현
-                            dispatchSwipe(downX, downY, upX, upY, duration)
+                            mainHandler.postDelayed({
+                                dispatchSwipe(downX, downY, upX, upY, duration)
+                            }, FLAG_SETTLE_DELAY_MS)
                         }
                     }
                 }
@@ -184,44 +212,50 @@ class TouchDetectorOverlay(
             return
         }
         
-        Log.d(TAG, "Dispatching click at ($x, $y)...")
-        
-        // 터치 감지 비활성화 + 터치 통과 모드로 전환
-        isEnabled = false
-        setTouchPassthrough(true)
-        
+        Log.d(TAG, "Dispatching click at ($x, $y), overlay visible: $isOverlayVisible")
+
+        // Track dispatched coordinates for recapture detection
+        lastDispatchedX = x
+        lastDispatchedY = y
+        lastDispatchTime = System.currentTimeMillis()
+
         val path = Path().apply {
             moveTo(x, y)
         }
-        
-        // 클릭 duration을 100ms로 설정 (너무 짧으면 인식 안될 수 있음)
+
         val gesture = GestureDescription.Builder()
-            .addStroke(GestureDescription.StrokeDescription(path, 0, 100))
+            .addStroke(GestureDescription.StrokeDescription(path, 0, CLICK_DURATION_MS))
             .build()
-        
+
+        Log.d(TAG, "Calling dispatchGesture...")
         val result = accessibilityService.dispatchGesture(gesture, object : AccessibilityService.GestureResultCallback() {
             override fun onCompleted(gestureDescription: GestureDescription?) {
-                Log.d(TAG, "Click dispatched successfully at ($x, $y)")
-                // 제스처 완료 후 터치 감지 다시 활성화
-                mainHandler.post {
+                Log.d(TAG, "onCompleted: Click dispatched successfully at ($x, $y)")
+                // Delay re-enabling to ensure gesture is fully processed
+                mainHandler.postDelayed({
                     setTouchPassthrough(false)
-                    isEnabled = true
-                }
+                    isDispatching = false
+                    Log.d(TAG, "Dispatch complete, ready for next touch")
+                }, CLICK_DURATION_MS + 50)
             }
-            
+
             override fun onCancelled(gestureDescription: GestureDescription?) {
-                Log.w(TAG, "Click dispatch cancelled at ($x, $y)")
-                // 취소되어도 터치 감지 다시 활성화
-                mainHandler.post {
+                Log.w(TAG, "onCancelled: Click dispatch cancelled at ($x, $y)")
+                mainHandler.postDelayed({
                     setTouchPassthrough(false)
-                    isEnabled = true
-                }
+                    isDispatching = false
+                    Log.d(TAG, "Dispatch cancelled, ready for next touch")
+                }, 50)
             }
         }, null)
-        
-        Log.d(TAG, "dispatchGesture returned: $result")
+
+        if (result) {
+            Log.d(TAG, "dispatchGesture accepted the gesture")
+        } else {
+            Log.e(TAG, "dispatchGesture REJECTED the gesture!")
+        }
     }
-    
+
     /**
      * 스와이프 제스처를 재현합니다.
      */
@@ -230,41 +264,42 @@ class TouchDetectorOverlay(
             Log.w(TAG, "dispatchGesture requires API 24+")
             return
         }
-        
+
         Log.d(TAG, "Dispatching swipe from ($startX, $startY) to ($endX, $endY)...")
-        
-        // 터치 감지 비활성화 + 터치 통과 모드로 전환
-        isEnabled = false
-        setTouchPassthrough(true)
-        
+
+        // Track dispatched coordinates for recapture detection (use start position)
+        lastDispatchedX = startX
+        lastDispatchedY = startY
+        lastDispatchTime = System.currentTimeMillis()
+
         val path = Path().apply {
             moveTo(startX, startY)
             lineTo(endX, endY)
         }
-        
+
         val swipeDuration = duration.coerceIn(100, 1000)
-        
+
         val gesture = GestureDescription.Builder()
             .addStroke(GestureDescription.StrokeDescription(path, 0, swipeDuration))
             .build()
-        
+
         val result = accessibilityService.dispatchGesture(gesture, object : AccessibilityService.GestureResultCallback() {
             override fun onCompleted(gestureDescription: GestureDescription?) {
                 Log.d(TAG, "Swipe dispatched successfully")
-                // 제스처 완료 후 터치 감지 다시 활성화
-                mainHandler.post {
+                mainHandler.postDelayed({
                     setTouchPassthrough(false)
-                    isEnabled = true
-                }
+                    isDispatching = false
+                    Log.d(TAG, "Swipe dispatch complete, ready for next touch")
+                }, swipeDuration + 50)
             }
-            
+
             override fun onCancelled(gestureDescription: GestureDescription?) {
                 Log.w(TAG, "Swipe dispatch cancelled")
-                // 취소되어도 터치 감지 다시 활성화
-                mainHandler.post {
+                mainHandler.postDelayed({
                     setTouchPassthrough(false)
-                    isEnabled = true
-                }
+                    isDispatching = false
+                    Log.d(TAG, "Swipe dispatch cancelled, ready for next touch")
+                }, 50)
             }
         }, null)
         

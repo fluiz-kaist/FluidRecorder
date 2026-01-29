@@ -8,5 +8,7 @@ object AppGlobals {
      * 현재 세션 ID (MainActivity에서 설정)
      */
     var sessionId: String = ""
+
+    var baseUrl: String = BuildConfig.BASE_URL;
 }
 
