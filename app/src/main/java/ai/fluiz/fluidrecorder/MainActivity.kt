@@ -1,4 +1,4 @@
-package com.example.fluidrecorder
+package ai.fluiz.fluidrecorder
 
 import android.content.Intent
 import android.net.Uri
@@ -18,7 +18,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import com.example.fluidrecorder.ui.theme.FluidRecorderTheme
+import ai.fluiz.fluidrecorder.ui.theme.FluidRecorderTheme
 
 class MainActivity : ComponentActivity() {
     

@@ -1,4 +1,4 @@
-package com.example.fluidrecorder
+package ai.fluiz.fluidrecorder
 
 import android.util.Log
 import okhttp3.Call

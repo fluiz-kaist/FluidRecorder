@@ -1,4 +1,4 @@
-package com.example.fluidrecorder.ui.theme
+package ai.fluiz.fluidrecorder.ui.theme
 
 import android.app.Activity
 import android.os.Build

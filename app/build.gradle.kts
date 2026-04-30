@@ -17,11 +17,11 @@ val mergedProps = Properties().apply {
 }
 
 android {
-    namespace = "com.example.fluidrecorder"
+    namespace = "ai.fluiz.fluidrecorder"
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "com.example.fluidrecorder"
+        applicationId = "ai.fluiz.fluidrecorder"
         minSdk = 30
         targetSdk = 35
         versionCode = 1

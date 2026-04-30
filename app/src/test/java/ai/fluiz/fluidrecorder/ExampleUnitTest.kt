@@ -1,4 +1,4 @@
-package com.example.fluidrecorder
+package ai.fluiz.fluidrecorder
 
 import org.junit.Test
 

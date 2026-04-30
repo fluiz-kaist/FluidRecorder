@@ -1,4 +1,4 @@
-package com.example.fluidrecorder
+package ai.fluiz.fluidrecorder
 
 /**
  * 전역 변수를 관리하는 싱글톤 객체

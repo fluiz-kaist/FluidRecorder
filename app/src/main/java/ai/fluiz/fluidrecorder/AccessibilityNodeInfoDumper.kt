@@ -1,4 +1,4 @@
-package com.example.fluidrecorder
+package ai.fluiz.fluidrecorder
 
 import android.graphics.Rect
 import android.os.SystemClock

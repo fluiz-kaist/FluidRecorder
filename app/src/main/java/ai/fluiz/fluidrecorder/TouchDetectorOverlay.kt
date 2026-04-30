@@ -1,4 +1,4 @@
-package com.example.fluidrecorder
+package ai.fluiz.fluidrecorder
 
 import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.GestureDescription

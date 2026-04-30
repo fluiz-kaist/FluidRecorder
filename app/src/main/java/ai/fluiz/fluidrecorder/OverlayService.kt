@@ -1,4 +1,4 @@
-package com.example.fluidrecorder
+package ai.fluiz.fluidrecorder
 
 import android.animation.ObjectAnimator
 import android.annotation.SuppressLint
