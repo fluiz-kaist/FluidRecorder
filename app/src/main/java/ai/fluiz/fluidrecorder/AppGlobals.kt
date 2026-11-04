@@ -9,6 +9,6 @@ object AppGlobals {
      */
     var sessionId: String = ""
 
-    var baseUrl: String = BuildConfig.BASE_URL;
+    var baseUrl: String = BuildConfig.BASE_URL
 }
 

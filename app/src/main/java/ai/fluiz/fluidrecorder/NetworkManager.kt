@@ -16,13 +16,14 @@ class NetworkManager {
     companion object {
         private const val TAG = "NetworkManager"
         private val BASE_URL = AppGlobals.baseUrl
-        
+        private val JSON_MEDIA_TYPE = "application/json; charset=utf-8".toMediaType()
+
         private val client = OkHttpClient.Builder()
             .connectTimeout(10, TimeUnit.SECONDS)
             .writeTimeout(10, TimeUnit.SECONDS)
             .readTimeout(30, TimeUnit.SECONDS)
             .build()
-        
+
         /**
          * 터치 액션 정보를 서버로 전송
          */
@@ -35,79 +36,72 @@ class NetworkManager {
             onSuccess: () -> Unit = {},
             onError: (String) -> Unit = {}
         ) {
-            try {
-                val json = JSONObject().apply {
-                    put("xpath", xpath)
-                    put("name", name)
-                    put("index", index)
-                    put("screen", screen)
-                    put("session_id", sessionId)
-                }
-                
-                val mediaType = "application/json; charset=utf-8".toMediaType()
-                val requestBody = json.toString().toRequestBody(mediaType)
-                
-                val request = Request.Builder()
-                    .url("$BASE_URL/api/collect/actions")
-                    .post(requestBody)
-                    .build()
-                
-                client.newCall(request).enqueue(object : Callback {
-                    override fun onFailure(call: Call, e: IOException) {
-                        val errorMsg = "액션 전송 실패: ${e.message}"
-                        Log.e(TAG, errorMsg, e)
-                        onError(errorMsg)
-                    }
-                    
-                    override fun onResponse(call: Call, response: Response) {
-                        response.use {
-                            if (it.isSuccessful) {
-                                val responseBody = it.body?.string() ?: ""
-                                Log.d(TAG, "액션 전송 성공: $responseBody")
-                                onSuccess()
-                            } else {
-                                val errorMsg = "서버 에러: ${it.code} - ${it.message}"
-                                Log.e(TAG, errorMsg)
-                                onError(errorMsg)
-                            }
-                        }
-                    }
-                })
-                
-            } catch (e: Exception) {
-                val errorMsg = "액션 전송 중 예외 발생: ${e.message}"
-                Log.e(TAG, errorMsg, e)
-                onError(errorMsg)
+            postJson(
+                path = "/api/collect/actions",
+                label = "액션 전송",
+                onSuccess = onSuccess,
+                onError = onError
+            ) {
+                put("xpath", xpath)
+                put("name", name)
+                put("index", index)
+                put("screen", screen)
+                put("session_id", sessionId)
             }
         }
-        
-        fun sendScreenDump(xml: String, filename: String, onSuccess: () -> Unit = {}, onError: (String) -> Unit = {}) {
+
+        /**
+         * 화면 덤프(XML)를 서버로 전송
+         */
+        fun sendScreenDump(
+            xml: String,
+            filename: String,
+            onSuccess: () -> Unit = {},
+            onError: (String) -> Unit = {}
+        ) {
+            postJson(
+                path = "/dump",
+                label = "화면 덤프 전송",
+                onSuccess = onSuccess,
+                onError = onError
+            ) {
+                put("xml", xml)
+                put("filename", filename)
+            }
+        }
+
+        /**
+         * JSON 바디를 [path]로 비동기 POST 전송하는 공통 헬퍼
+         */
+        private fun postJson(
+            path: String,
+            label: String,
+            onSuccess: () -> Unit,
+            onError: (String) -> Unit,
+            buildBody: JSONObject.() -> Unit
+        ) {
             try {
-                val json = JSONObject().apply {
-                    put("xml", xml)
-                    put("filename", filename)
-                }
-                
-                val mediaType = "application/json; charset=utf-8".toMediaType()
-                val requestBody = json.toString().toRequestBody(mediaType)
-                
+                val requestBody = JSONObject().apply(buildBody)
+                    .toString()
+                    .toRequestBody(JSON_MEDIA_TYPE)
+
                 val request = Request.Builder()
-                    .url("$BASE_URL/dump")
+                    .url("$BASE_URL$path")
                     .post(requestBody)
                     .build()
-                
+
                 client.newCall(request).enqueue(object : Callback {
                     override fun onFailure(call: Call, e: IOException) {
-                        val errorMsg = "네트워크 요청 실패: ${e.message}"
+                        val errorMsg = "$label 실패: ${e.message}"
                         Log.e(TAG, errorMsg, e)
                         onError(errorMsg)
                     }
-                    
+
                     override fun onResponse(call: Call, response: Response) {
                         response.use {
                             if (it.isSuccessful) {
                                 val responseBody = it.body?.string() ?: ""
-                                Log.d(TAG, "화면 덤프 전송 성공: $responseBody")
+                                Log.d(TAG, "$label 성공: $responseBody")
                                 onSuccess()
                             } else {
                                 val errorMsg = "서버 에러: ${it.code} - ${it.message}"
@@ -117,13 +111,11 @@ class NetworkManager {
                         }
                     }
                 })
-                
             } catch (e: Exception) {
-                val errorMsg = "화면 덤프 전송 중 예외 발생: ${e.message}"
+                val errorMsg = "$label 중 예외 발생: ${e.message}"
                 Log.e(TAG, errorMsg, e)
                 onError(errorMsg)
             }
         }
     }
 }
-
