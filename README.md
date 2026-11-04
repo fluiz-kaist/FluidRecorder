@@ -140,7 +140,7 @@ You may obtain a copy of the License at
 
 ## Contributors
 
-The following individuals contributed to the development of this project:
+The following individuals contributed to the research, development, and testing of this project:
 
 - [jongseok0116](https://github.com/jongseok0116) — Research & Development
 - [minu0816](https://github.com/minu0816) — Research & Development
