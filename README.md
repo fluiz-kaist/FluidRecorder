@@ -137,3 +137,12 @@ You may obtain a copy of the License at
 
     http://www.apache.org/licenses/LICENSE-2.0
 ```
+
+## Contributors
+
+The following individuals contributed to the development of this project:
+
+- [jongseok0116](https://github.com/jongseok0116) — Research & Development
+- [minu0816](https://github.com/minu0816) — Research & Development
+- [leesaeha](https://github.com/leesaeha) — Research & Development
+- [sangmin-del](https://github.com/sangmin-del) — Testing & Planning
