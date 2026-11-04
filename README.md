@@ -146,3 +146,5 @@ The following individuals contributed to the research, development, and testing 
 - [minu0816](https://github.com/minu0816) — Research & Development
 - [leesaeha](https://github.com/leesaeha) — Research & Development
 - [sangmin-del](https://github.com/sangmin-del) — Testing & Planning
+
+Contributions are welcome. Feel free to open an issue or a pull request.
